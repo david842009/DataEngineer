@@ -36,7 +36,7 @@ Asegúrate de tener instalado:
 
 ### Clonar el repositorio
 ```bash
-git clone https://github.com/tu-repo.git
+git clone https://github.com/david842009/DataEngineer.git
 cd tu-repo
 ```
 
