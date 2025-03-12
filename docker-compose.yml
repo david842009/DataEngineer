@@ -1,0 +1,128 @@
+services:
+  postgres:
+    image: postgres:13
+    container_name: airflow-db
+    restart: always
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "5432:5432"
+    networks:
+      - spark_network
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  # Persistencia de la BD
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 10s
+
+  spark-master:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: spark-master
+    hostname: spark-master
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+    environment:
+      - SPARK_MODE=master
+      - SPARK_JARS_PACKAGES=io.delta:delta-core_2.12:2.0.0,io.delta:delta-storage:2.0.0
+      - SPARK_SUBMIT_OPTIONS=--jars /opt/bitnami/spark/jars/delta-core_2.12-2.0.0.jar,/opt/bitnami/spark/jars/delta-storage_2.12-2.0.0.jar \
+        --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
+        --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog
+    networks:
+      - spark_network
+    volumes:
+      - ./scripts:/opt/workspace/scripts
+      - delta-storage:/opt/workspace/delta
+      - ./spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
+      - ./parquet:/opt/workspace/parquet
+
+  spark-worker-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: spark-worker-1
+    hostname: spark-worker-1
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=1
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_JARS_PACKAGES=io.delta:delta-core_2.12:2.0.0,io.delta:delta-storage:2.0.0
+      - SPARK_SUBMIT_OPTIONS=--jars /opt/bitnami/spark/jars/delta-core_2.12-2.0.0.jar,/opt/bitnami/spark/jars/delta-storage_2.12-2.0.0.jar \
+        --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
+        --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog
+    networks:
+      - spark_network
+    volumes:
+      - ./scripts:/opt/workspace/scripts
+      - delta-storage:/opt/workspace/delta
+      - ./spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
+      - ./parquet:/opt/workspace/parquet
+
+
+  spark-worker-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    container_name: spark-worker-2
+    hostname: spark-worker-2
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=1
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_JARS_PACKAGES=io.delta:delta-core_2.12:2.0.0,io.delta:delta-storage:2.0.0
+      - SPARK_SUBMIT_OPTIONS=--jars /opt/bitnami/spark/jars/delta-core_2.12-2.0.0.jar,/opt/bitnami/spark/jars/delta-storage_2.12-2.0.0.jar \
+        --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
+        --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog
+    networks:
+      - spark_network
+    volumes:
+      - ./scripts:/opt/workspace/scripts
+      - delta-storage:/opt/workspace/delta
+      - ./spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
+      - ./parquet:/opt/workspace/parquet
+
+  airflow:
+    image: apache/airflow:2.7.3-python3.8
+    container_name: airflow
+    restart: always
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      - AIRFLOW__CORE__FERNET_KEY=AeuJCGOLu3LOMDUUqVd9HtKsSL-Cqye_OAha3qnDSnk=
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8081:8080"
+    networks:
+      - spark_network
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./scripts:/opt/workspace/scripts
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: >
+      bash -c "
+      airflow db upgrade &&
+      airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com &&
+      airflow webserver & airflow scheduler
+      "
+volumes:
+  postgres_data:  # Volumen persistente para PostgreSQL
+    driver: local
+  delta-storage:  # Volumen persistente para Delta Lake
+
+networks:
+  spark_network:
+    driver: bridge

@@ -1,0 +1,28 @@
+# Dockerfile para Spark con Delta Lake
+FROM bitnami/spark:3.2.0
+
+WORKDIR /opt/bitnami/spark/jars/
+
+# Descargamos los JARs necesarios
+RUN curl -L -o delta-core_2.12-2.0.0.jar \
+    https://repo1.maven.org/maven2/io/delta/delta-core_2.12/2.0.0/delta-core_2.12-2.0.0.jar && \
+    curl -L -o delta-storage_2.12-2.0.0.jar \
+    https://repo1.maven.org/maven2/io/delta/delta-storage/2.0.0/delta-storage_2.12-2.0.0.jar
+
+RUN chmod 644 delta-core_2.12-2.0.0.jar delta-storage_2.12-2.0.0.jar
+
+# Instalamos las librerías necesarias
+USER root
+RUN apt-get update && apt-get install -y python3-pip && \
+    pip3 install --no-cache-dir requests nltk spacy && \
+    python3 -m nltk.downloader stopwords punkt vader_lexicon && \
+    python3 -m spacy download en_core_web_md
+
+# Volvemos al usuario original
+USER 1001
+
+ENV SPARK_SUBMIT_OPTIONS="--conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension \
+                          --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog"
+
+WORKDIR /opt/bitnami/spark
+CMD ["/opt/bitnami/scripts/spark/run.sh"]
